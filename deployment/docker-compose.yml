@@ -1,0 +1,76 @@
+services:
+  caddy:
+    image: ghcr.io/hike05/crips:latest
+    container_name: crips-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./www:/var/www/html:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - /var/log/crips:/var/log/caddy
+    environment:
+      DOMAIN: ${DOMAIN}
+      EMAIL: ${EMAIL}
+      PROXY_USER: ${PROXY_USER}
+      PROXY_PASS: ${PROXY_PASS}
+      BOUNCER_KEY: ${BOUNCER_KEY}
+      REALITY_DOMAIN: ${REALITY_DOMAIN:-disabled.local}
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      crowdsec:
+        condition: service_healthy
+    networks:
+      - crips_net
+    profiles:
+      - basic
+      - reality
+
+  singbox:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: crips-singbox
+    restart: unless-stopped
+    volumes:
+      - ./singbox-config.json:/etc/sing-box/config.json:ro
+    environment:
+      REALITY_UUID: ${REALITY_UUID}
+      REALITY_PRIVATE_KEY: ${REALITY_PRIVATE_KEY}
+      REALITY_SHORT_ID: ${REALITY_SHORT_ID}
+    networks:
+      - crips_net
+    profiles:
+      - reality
+
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: crips-crowdsec
+    restart: unless-stopped
+    volumes:
+      - crowdsec_config:/etc/crowdsec
+      - crowdsec_data:/var/lib/crowdsec/data
+      - /var/log:/var/log:ro
+    healthcheck:
+      test: ["CMD", "cscli", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - crips_net
+    profiles:
+      - basic
+      - reality
+
+volumes:
+  caddy_data:
+  caddy_config:
+  crowdsec_config:
+  crowdsec_data:
+
+networks:
+  crips_net:
+    driver: bridge

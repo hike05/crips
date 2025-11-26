@@ -1,0 +1,70 @@
+{
+    layer4 {
+        :443 {
+            @reality {
+                tls sni {$REALITY_DOMAIN}
+            }
+            route @reality {
+                proxy {
+                    upstream singbox:443
+                }
+            }
+
+            route {
+                tls
+                proxy {
+                    upstream localhost:8443
+                }
+            }
+        }
+    }
+
+    order crowdsec before forward_proxy
+    order forward_proxy before route
+
+    servers :8443 {
+        metrics
+    }
+
+    crowdsec {
+        api_url http://crowdsec:8080
+        api_key {env.BOUNCER_KEY}
+        ticker_interval 60s
+    }
+}
+
+:8443 {
+    tls {$EMAIL} {
+        protocols tls1.2 tls1.3
+    }
+
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    route {
+        crowdsec
+
+        forward_proxy {
+            basic_auth {$PROXY_USER} {$PROXY_PASS}
+            hide_ip
+            hide_via
+            probe_resistance
+        }
+
+        rate_limit {
+            zone dynamic {
+                key {remote_host}
+                events 100
+                window 1m
+            }
+        }
+
+        respond "OK" 200
+    }
+}
+
+{$DOMAIN}:80 {
+    redir https://{host} permanent
+}
